@@ -6,7 +6,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   export let form;
-  let accountType = 'applicant';
   let submitting = false;
 </script>
 
@@ -33,27 +32,13 @@
   <section class="auth-card">
     <span class="eyebrow">CREATE ACCOUNT</span>
     <h2>Get started</h2>
-    <p class="sub">Create the account you actually need.</p>
+    <p class="sub">Create your free candidate account to apply and track your progress.</p>
 
     {#if form?.error}
       <div class="error" role="alert">{form.error}</div>
     {/if}
 
     <form method="POST" use:enhance={() => { submitting = true; return async ({ update }) => { await update(); submitting = false; }; }}>
-      <div class="account-types" aria-label="Account type">
-        <button type="button" class:chosen={accountType === 'applicant'} onclick={() => accountType = 'applicant'}>
-          <b>Applicant</b>
-          <small>Track applications and interviews</small>
-        </button>
-
-        <button type="button" class:chosen={accountType === 'hr'} onclick={() => accountType = 'hr'}>
-          <b>HR / Recruiter</b>
-          <small>Manage candidates and hiring</small>
-        </button>
-      </div>
-
-      <input type="hidden" name="accountType" value={accountType} />
-
       <label for="signup-name">
         Full name
         <input id="signup-name" name="fullName" autocomplete="name" required value={form?.fullName ?? ''} />
@@ -69,15 +54,7 @@
         <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
       </label>
 
-      {#if accountType === 'hr'}
-        <label for="signup-hr-code">
-          HR invitation code
-          <input id="signup-hr-code" name="hrCode" type="password" autocomplete="off" required />
-        </label>
-        <p class="hint">HR access is invitation-only. The invitation code is never stored in the browser.</p>
-      {/if}
-
-      <button class="primary" type="submit" disabled={submitting} aria-busy={submitting}>{#if submitting}<span class="loading-spinner" aria-hidden="true"></span>Creating account…{:else}Create {accountType === 'hr' ? 'HR' : 'applicant'} account{/if}</button>
+      <button class="primary" type="submit" disabled={submitting} aria-busy={submitting}>{#if submitting}<span class="loading-spinner" aria-hidden="true"></span>Creating account…{:else}Create applicant account{/if}</button>
     </form>
 
     <div class="links">

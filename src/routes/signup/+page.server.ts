@@ -1,13 +1,41 @@
-import { fail, redirect } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { profiles } from '$lib/server/db/schema';
-import { env } from '$env/dynamic/private';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { fail, redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function safeNext(value: string | null): string {
+  if (!value) return '/account';
+
+  // Candidates may only resume within their account workspace.
+  if (
+    !value.startsWith('/account') ||
+    (value !== '/account' &&
+      !value.startsWith('/account/') &&
+      !value.startsWith('/account?'))
+  ) {
+    return '/account';
+  }
+
+  if (
+    value.startsWith('//') ||
+    value.includes('\\') ||
+    /[\x00-\x1F\x7F]/.test(value)
+  ) {
+    return '/account';
+  }
+
+  return value;
+}
+
+export const load: PageServerLoad = async ({ url }) => {
+  return {
+    next: safeNext(url.searchParams.get('next'))
+  };
+};
 
 export const actions = {
-  default: async ({ request, locals }) => {
+  default: async ({ request, locals, url }) => {
     const form = await request.formData();
 
     const fullName = String(form.get('fullName') ?? '')
@@ -19,170 +47,136 @@ export const actions = {
       .toLowerCase();
 
     const password = String(form.get('password') ?? '');
-    const accountType = String(form.get('accountType') ?? 'applicant');
-    const hrCode = String(form.get('hrCode') ?? '').trim();
 
-    const isApplicant = accountType === 'applicant';
-    const isHr = accountType === 'hr';
+    const next = safeNext(
+      url.searchParams.get('next') ??
+      String(form.get('next') ?? '')
+    );
 
-    if (!isApplicant && !isHr) {
-      return fail(400, {
-        error: 'Choose a valid account type.',
-        fullName,
-        email,
-        accountType: 'applicant'
-      });
-    }
+    const values = {
+      fullName,
+      email,
+      next
+    };
+
+    // Validate candidate details.
 
     if (!fullName || !email || !password) {
       return fail(400, {
-        error: 'Complete all required fields.',
-        fullName,
-        email,
-        accountType
+        ...values,
+        error: 'Please complete all required fields.'
       });
     }
 
     if (fullName.length < 2 || fullName.length > 120) {
       return fail(400, {
-        error: 'Enter a valid full name.',
-        fullName,
-        email,
-        accountType
+        ...values,
+        error: 'Full name must contain between 2 and 120 characters.'
       });
     }
 
-    if (!EMAIL_RE.test(email) || email.length > 254) {
+    if (
+      email.length > 254 ||
+      !EMAIL_REGEX.test(email)
+    ) {
       return fail(400, {
-        error: 'Enter a valid email address.',
-        fullName,
-        email,
-        accountType
+        ...values,
+        error: 'Please enter a valid email address.'
       });
     }
 
-    if (password.length < 8 || password.length > 128) {
+    if (password.length < 12 || password.length > 128) {
       return fail(400, {
-        error: 'Password must be between 8 and 128 characters.',
-        fullName,
-        email,
-        accountType
+        ...values,
+        error: 'Password must contain between 12 and 128 characters.'
       });
     }
 
-    if (isHr && (!env.HR_SIGNUP_CODE || hrCode !== env.HR_SIGNUP_CODE)) {
-      return fail(403, {
-        error: 'HR accounts require a valid invitation code.',
-        fullName,
-        email,
-        accountType
-      });
-    }
+    /*
+      SECURITY:
 
-    const origin = new URL(request.url).origin;
+      Public signup is always candidate-only.
+
+      No role, accountType, isAdmin, or HR permission is
+      accepted from the browser.
+
+      The database profile trigger must independently
+      create every new profile with role = applicant.
+    */
+
+    const emailRedirectTo = new URL(
+      '/auth/callback',
+      url.origin
+    );
+
+    emailRedirectTo.searchParams.set('next', next);
 
     const { data, error } = await locals.supabase.auth.signUp({
       email,
       password,
+
       options: {
+        emailRedirectTo: emailRedirectTo.toString(),
+
         data: {
           full_name: fullName
-        },
-        emailRedirectTo: `${origin}/auth/callback`
+        }
       }
     });
 
     if (error) {
-      console.error('Supabase signup failed', {
-        message: error.message,
-        code: error.code
+      console.error('Candidate registration failed', {
+        code: error.code,
+        message: error.message
       });
 
+      if (
+        error.code === 'over_email_send_rate_limit' ||
+        error.status === 429
+      ) {
+        return fail(429, {
+          ...values,
+          error: 'Too many attempts. Please try again later.'
+        });
+      }
+
       return fail(400, {
-        error: error.message,
-        fullName,
-        email,
-        accountType
+        ...values,
+        error:
+          'We could not complete your registration. Please check your details or try again later.'
       });
     }
 
     if (!data.user) {
       return fail(500, {
-        error: 'The account could not be created. Please try again.',
-        fullName,
-        email,
-        accountType
+        ...values,
+        error: 'Unable to complete registration. Please try again.'
       });
     }
 
     /*
-     * The Supabase database trigger creates the base profile.
-     * Every new account starts as "applicant".
-     *
-     * HR elevation happens only on the trusted server after
-     * the HR invitation code has already been validated.
-     */
-    try {
-      if (isHr) {
-        const updated = await db
-          .update(profiles)
-          .set({
-            fullName,
-            email,
-            role: 'recruiter'
-          })
-          .where(eq(profiles.id, data.user.id))
-          .returning({
-            id: profiles.id
-          });
+      If email confirmation is enabled, the user normally
+      receives no session until verification.
 
-        if (updated.length !== 1) {
-          throw new Error(
-            'Profile trigger did not create the new user profile.'
-          );
-        }
-      } else {
-        const [profile] = await db
-          .select({
-            id: profiles.id
-          })
-          .from(profiles)
-          .where(eq(profiles.id, data.user.id))
-          .limit(1);
+      Profile creation must be handled by the database
+      trigger, not by trusting browser-supplied fields.
+    */
 
-        if (!profile) {
-          throw new Error(
-            'Profile trigger did not create the new user profile.'
-          );
-        }
-      }
-    } catch (dbError) {
-      console.error('Profile provisioning failed after signup', dbError);
-
-      return fail(500, {
-        error:
-          'Your account was created, but its profile could not be provisioned. Please contact Origins support before trying again.',
-        fullName,
-        email,
-        accountType
-      });
-    }
-
-    /*
-     * With email confirmation enabled, Supabase intentionally returns
-     * no session. Send the user to sign-in with a clear message.
-     */
     if (!data.session) {
-      throw redirect(
-        303,
-        `/login?created=1&email=${encodeURIComponent(email)}`
-      );
+      const destination = new URL('/login', url.origin);
+
+      destination.searchParams.set('created', '1');
+      destination.searchParams.set('email', email);
+      destination.searchParams.set('next', next);
+
+      throw redirect(303, destination.pathname + destination.search);
     }
 
     /*
-     * If email confirmation is disabled, Supabase gives us a session
-     * immediately and the user can enter the portal.
-     */
-    throw redirect(303, '/');
+      If email verification is disabled, Supabase may
+      create a session immediately.
+    */
+
+    throw redirect(303, next);
   }
-};
+} satisfies Actions;

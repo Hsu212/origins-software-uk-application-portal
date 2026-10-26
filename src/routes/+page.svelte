@@ -1,642 +1,638 @@
-<!--
-   Disclaimer: Property of origins ltd. united kingdom.
-   privacy policy: https://www.origins-software.com/privacy
-   terms of service: https://www.origins-software.com/terms
--->
+
 <script lang="ts">
-  import { enhance } from '$app/forms';
-  import type { ActionData, PageData } from './$types';
-  import Icon from '$lib/Icon.svelte';
+  import './careers.css';
+  import { onMount } from 'svelte';
+  import type { PageData } from './$types';
 
   export let data: PageData;
-  export let form: ActionData | null = null;
 
-  type Job = PageData['openJobs'][number];
-  type Application = PageData['applications'][number];
+  let query = '';
+  let location = '';
+  let type = 'All types';
+  let sort = 'newest';
+  let selected: string | null = null;
+  let saved: string[] = [];
+  let mobileDetails = false;
 
-  const HR_ROLES = ['owner', 'admin', 'recruiter', 'hiring_manager'] as const;
-  const isHr = HR_ROLES.includes(data.role as (typeof HR_ROLES)[number]);
+  $: employmentTypes = [
+    ...new Set(data.openJobs.map((job) => job.employmentType))
+  ];
 
-  let active = isHr ? 'pipeline' : 'applications';
-  let selectedJob: Job | null = null;
-  let selectedApplication: Application | null = null;
-  let toast = '';
-  let applicationSearch = '';
-  let statusFilter = 'all';
-  let busyAction = false;
-  let selectedResumeName = ''; 
-  function handleResumeChange(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    selectedResumeName = input.files?.[0]?.name ?? '';
-  }
-  const statusStages = ['applied', 'screening', 'interview', 'assessment', 'offer', 'hired', 'rejected', 'withdrawn'];
-  $: filteredApplications = data.applications.filter((application) => {
-    const haystack = `${application.applicant?.fullName ?? ''} ${application.applicant?.email ?? ''} ${application.job?.title ?? ''}`.toLowerCase();
-    return haystack.includes(applicationSearch.toLowerCase()) && (statusFilter === 'all' || application.status === statusFilter);
-  });
-  $: stageCounts = statusStages.map((status) => ({ status, count: data.applications.filter((application) => application.status === status).length }));
-  $: maxStageCount = Math.max(1, ...stageCounts.map((stage) => stage.count));
-  $: upcomingInterviews = (data.interviews ?? []).filter((item) => new Date(item.startsAt).getTime() >= Date.now() && item.status !== 'cancelled').slice(0, 5);
-  $: selectedApplicationInterviews = selectedApplication ? data.interviews.filter((item) => item.applicationId === selectedApplication?.id) : [];
+  $: matching = data.openJobs.filter((job) => {
+    const term = query.trim().toLowerCase();
+    const place = location.trim().toLowerCase();
 
-  function enhanceWithLoading() {
-    busyAction = true;
-    return async ({ update }: { update: () => Promise<void> }) => {
-      try { await update(); } finally { busyAction = false; }
-    };
-  }
-  let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-
-  $: calendarTitle = calendarMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  $: calendarCells = buildCalendar(calendarMonth, data.interviews ?? []);
-
-  function buildCalendar(month: Date, interviews: PageData['interviews']) {
-    const year = month.getFullYear();
-    const monthIndex = month.getMonth();
-    const firstWeekday = new Date(year, monthIndex, 1).getDay();
-    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-    const previousMonthDays = new Date(year, monthIndex, 0).getDate();
-    const today = new Date();
-    return Array.from({ length: 42 }, (_, index) => {
-      const dayNumber = index - firstWeekday + 1;
-      const date = new Date(year, monthIndex, dayNumber);
-      const inMonth = dayNumber > 0 && dayNumber <= daysInMonth;
-      const day = inMonth ? dayNumber : dayNumber <= 0 ? previousMonthDays + dayNumber : dayNumber - daysInMonth;
-      const events = interviews.filter((item) => {
-        const startsAt = new Date(item.startsAt);
-        return !Number.isNaN(startsAt.getTime()) && startsAt.getFullYear() === date.getFullYear() && startsAt.getMonth() === date.getMonth() && startsAt.getDate() === date.getDate() && item.status !== 'cancelled';
-      });
-      return { key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`, day, inMonth, today: date.toDateString() === today.toDateString(), events };
-    });
-  }
-
-  function shiftCalendar(offset: number) {
-    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + offset, 1);
-  }
-
-  $: if (form?.success || form?.message) {
-    toast = form.message ?? 'Saved.';
-  }
-
-  $: if (form?.error) {
-    toast = form.error;
-  }
-
-  function initials(name: string | null | undefined) {
     return (
-      name
-        ?.split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join('')
-        .toUpperCase() || 'O'
+      `${job.title} ${job.department} ${job.description}`
+        .toLowerCase()
+        .includes(term) &&
+      job.location.toLowerCase().includes(place) &&
+      (type === 'All types' || job.employmentType === type)
     );
+  });
+
+  $: ordered = [...matching].sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+
+    return sort === 'oldest'
+      ? aTime - bTime
+      : bTime - aTime;
+  });
+
+  $: current =
+    ordered.find((job) => job.id === selected) ?? ordered[0];
+
+  $: hasFilters =
+    query.trim() !== '' ||
+    location.trim() !== '' ||
+    type !== 'All types';
+
+  function selectJob(id: string) {
+    selected = id;
+    mobileDetails = true;
   }
 
-  function formatDate(value: string | Date | null | undefined) {
-    if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('en', {
-      day: '2-digit',
+  function clearFilters() {
+    query = '';
+    location = '';
+    type = 'All types';
+    selected = null;
+  }
+
+  function toggleSaved(id: string) {
+    saved = saved.includes(id)
+      ? saved.filter((item) => item !== id)
+      : [...saved, id];
+
+    try {
+      localStorage.setItem(
+        'origins-saved-jobs',
+        JSON.stringify(saved)
+      );
+    } catch {
+      // Saving locally may be unavailable in private browsing.
+    }
+  }
+
+  function shortDate(value: Date | string) {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
       month: 'short',
       year: 'numeric'
-    }).format(date);
+    }).format(new Date(value));
   }
 
-  function formatDateTime(value: string | Date | null | undefined) {
-    if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('en', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+  function isNew(value: Date | string) {
+    const age = Date.now() - new Date(value).getTime();
+    return age >= 0 && age <= 7 * 86400000;
   }
 
-  function notify(message: string) {
-    toast = message;
-    window.setTimeout(() => {
-      if (toast === message) toast = '';
-    }, 3200);
-  }
+  onMount(() => {
+    try {
+      const items = JSON.parse(
+        localStorage.getItem('origins-saved-jobs') ?? '[]'
+      );
 
-  function openApplication(application: Application) {
-    selectedApplication = application;
-  }
-
-  function closeModals() {
-    selectedJob = null;
-    selectedApplication = null;
-  }
-
-  if (typeof document !== 'undefined') {
-    document.documentElement.dataset.theme = 'dark';
-    localStorage.removeItem('origins-talent-theme');
-  }
+      if (Array.isArray(items)) {
+        saved = items.filter(
+          (item): item is string => typeof item === 'string'
+        );
+      }
+    } catch {
+      saved = [];
+    }
+  });
 </script>
 
 <svelte:head>
-  <title>Origins — Talent Workspace</title>
-  <meta name="description" content="Secure Origins talent workspace." />
+  <title>Careers & Open Positions | Origins Software</title>
+  <meta
+    name="description"
+    content="Discover career opportunities at Origins Software. Explore our open positions, learn about the company and apply securely through our candidate portal."
+  />
 </svelte:head>
 
-<div class="app origins-talent-app">
-  <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Origins talent home">
-      <img class="brand-logo" src="/images/origins-logo.png" alt="Origins" />
-      <span><b>ORIGINS</b><small>TALENT</small></span>
-    </a>
+<div class="careers">
 
-    <div class="account-context">
-      <span class="eyebrow">SIGNED IN AS</span>
-      <strong>{data.profile.fullName}</strong>
-      <small>{data.profile.role.replace('_', ' ')}</small>
-    </div>
+  <!-- CORPORATE HEADER -->
+  <header class="career-nav">
+    <div class="board-container nav-inner">
 
-    <nav aria-label="Talent workspace">
-      <span class="nav-title">WORKSPACE</span>
+      <a href="/" class="career-logo" aria-label="Origins Software Careers">
+        <img
+          src="/images/origins-logo.png"
+          alt=""
+          width="42"
+          height="42"
+        />
 
-      {#if isHr}
-        <button class:active={active === 'pipeline'} type="button" onclick={() => (active = 'pipeline')}>
-          <span class="nav-icon"><Icon name="users" size={16} /></span>Pipeline
-        </button>
-        <button class:active={active === 'jobs'} type="button" onclick={() => (active = 'jobs')}>
-          <span class="nav-icon"><Icon name="briefcase" size={16} /></span>Jobs
-        </button>
-        <button class:active={active === 'interviews'} type="button" onclick={() => (active = 'interviews')}>
-          <span class="nav-icon"><Icon name="calendar" size={16} /></span>Interviews
-        </button>
-        <button class:active={active === 'messages'} type="button" onclick={() => (active = 'messages')}>
-          <span class="nav-icon"><Icon name="message" size={16} /></span>Messages
-        </button>
-      {:else}
-        <button class:active={active === 'applications'} type="button" onclick={() => (active = 'applications')}>
-          <span class="nav-icon"><Icon name="file" size={16} /></span>My applications
-        </button>
-        <button class:active={active === 'jobs'} type="button" onclick={() => (active = 'jobs')}>
-          <span class="nav-icon"><Icon name="briefcase" size={16} /></span>Open positions
-        </button>
-        <button class:active={active === 'interviews'} type="button" onclick={() => (active = 'interviews')}>
-          <span class="nav-icon"><Icon name="calendar" size={16} /></span>Interviews
-        </button>
-        <button class:active={active === 'messages'} type="button" onclick={() => (active = 'messages')}>
-          <span class="nav-icon"><Icon name="message" size={16} /></span>Messages
-        </button>
-      {/if}
+        <span class="logo-copy">
+          <strong>ORIGINS</strong>
+          <small>SOFTWARE <span>/</span> CAREERS</small>
+        </span>
+      </a>
 
-      <span class="nav-title second">ACCOUNT</span>
-      <button class:active={active === 'settings'} type="button" onclick={() => (active = 'settings')}>
-        <span class="nav-icon"><Icon name="settings" size={16} /></span>Settings
-      </button>
-    </nav>
+      <nav class="desktop-nav" aria-label="Main navigation">
+        <a href="#jobs">Opportunities</a>
+        <a href="#about">About Origins</a>
+        <a href="#process">How we hire</a>
+        <a
+          href="https://www.origins-software.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Company website <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
 
-    <div class="side-bottom">
-      <div class="account">
-        <span>{initials(data.profile.fullName)}</span>
-        <div><b>{data.profile.fullName}</b><small>{data.profile.email}</small></div>
-        <form method="POST" action="?/logout">
-          <button type="submit" aria-label="Sign out" title="Sign out">
-            <Icon name="logout" size={15} />
-          </button>
-        </form>
+      <div class="nav-actions">
+        {#if data.signedIn}
+          <a class="nav-cta" href="/account">
+            My dashboard <span aria-hidden="true">↗</span>
+          </a>
+        {:else}
+          <a class="sign-in" href="/login">Sign in</a>
+          <a class="nav-cta" href="/signup">
+            Create account <span aria-hidden="true">↗</span>
+          </a>
+        {/if}
       </div>
+
     </div>
-  </aside>
+  </header>
 
   <main>
-    <header class="topbar">
-      <div class="crumb">
-        <span>ORIGINS</span><strong>·</strong><strong>{isHr ? 'Talent workspace' : 'Applicant workspace'}</strong>
-      </div>
-      <div class="top-actions">
-        <span class="role-pill">{data.profile.role.replace('_', ' ')}</span>
-        <span class="avatar">{initials(data.profile.fullName)}</span>
-      </div>
-    </header>
 
-    {#if isHr && active === 'pipeline'}
-      <div class="content">
-        <div class="head">
-          <div>
-            <span class="eyebrow green">RECRUITING</span>
-            <h1>Hiring pipeline.</h1>
-            <p>Review authenticated candidate applications and move them through your real hiring workflow.</p>
+    <!-- EDITORIAL INTRO: NO FULL-SCREEN HERO -->
+    <section class="career-intro">
+      <div class="board-container intro-layout">
+
+        <div class="intro-main">
+          <div class="section-index">
+            <span class="index-line"></span>
+            ORIGINS SOFTWARE / CAREERS
           </div>
-          <button class="button primary" type="button" onclick={() => (active = 'jobs')}>Manage jobs <Icon name="arrow" size={13} /></button>
+
+          <h1>
+            Build meaningful work.
+            <span>Find your place.</span>
+          </h1>
+
+          <p>
+            Discover opportunities at Origins Software.
+            Explore available roles, find the right fit for your
+            experience, and take your next step with us.
+          </p>
+
+          <div class="intro-links">
+            <a href="#jobs" class="intro-primary">
+              Explore opportunities
+              <span aria-hidden="true">↗</span>
+            </a>
+
+            <a href="#about" class="intro-secondary">
+              Get to know Origins
+              <span aria-hidden="true">↓</span>
+            </a>
+          </div>
         </div>
 
-        <section class="metrics hr-metrics">
-          <article><span>TOTAL APPLICATIONS</span><strong>{data.stats.applications}</strong><small>Across all published positions</small></article>
-          <article><span>ACTIVE CANDIDATES</span><strong>{data.stats.active}</strong><small>In review or progressing</small></article>
-          <article><span>UPCOMING INTERVIEWS</span><strong>{upcomingInterviews.length}</strong><small>Scheduled from saved records</small></article>
-          <article><span>OPEN POSITIONS</span><strong>{data.stats.openJobs}</strong><small>{data.stats.offers} offer-stage candidate(s)</small></article>
-        </section>
+        <div class="intro-aside">
+          <span class="aside-label">CURRENTLY RECRUITING</span>
 
-        <section class="hr-analytics">
-          <article class="panel analytics-panel">
-            <div class="panel-head"><div><span class="eyebrow">HIRING ANALYTICS</span><h2>Application stages</h2><p>Live distribution of your current application records.</p></div><span class="analytics-total">{data.stats.applications} total</span></div>
-            {#if data.applications.length === 0}<div class="chart-empty">Stage analytics will appear when candidates apply.</div>{:else}
-              <div class="stage-chart" role="img" aria-label="Application counts by hiring stage">
-                {#each stageCounts as stage}
-                  <div class="stage-bar-row"><span>{stage.status.replace('_', ' ')}</span><div class="stage-track"><i style={`width:${(stage.count / maxStageCount) * 100}%`}></i></div><b>{stage.count}</b></div>
-                {/each}
-              </div>
-            {/if}
-          </article>
-          <article class="panel upcoming-panel">
-            <div class="panel-head"><div><span class="eyebrow">NEXT UP</span><h2>Interview schedule</h2><p>Upcoming booked interviews.</p></div><button class="text-btn" type="button" onclick={() => (active = 'interviews')}>View calendar →</button></div>
-            {#if upcomingInterviews.length === 0}<div class="chart-empty">No upcoming interviews scheduled.</div>{:else}
-              {#each upcomingInterviews as interview}
-                {@const related = data.applications.find((item) => item.id === interview.applicationId)}
-                <div class="upcoming-item"><div class="upcoming-date"><b>{new Date(interview.startsAt).toLocaleDateString('en-GB',{day:'2-digit'})}</b><small>{new Date(interview.startsAt).toLocaleDateString('en-GB',{month:'short'})}</small></div><div class="upcoming-copy"><strong>{interview.title}</strong><small>{related?.applicant?.fullName ?? 'Candidate'} · {related?.job?.title ?? 'Position'}</small><small>{formatDateTime(interview.startsAt)}</small></div><a class="mini-link" href={interview.meetingUrl || `/interview/${interview.roomCode}`} target={interview.meetingUrl ? '_blank' : undefined} rel={interview.meetingUrl ? 'noopener noreferrer' : undefined} aria-label="Open Google Meet interview">↗</a></div>
-              {/each}
-            {/if}
-          </article>
-        </section>
+          <div class="aside-count">
+            {data.openJobs.length.toString().padStart(2, '0')}
+          </div>
 
-        <section class="panel table-panel hr-applications-panel">
-          <div class="panel-head"><div><span class="eyebrow">CANDIDATE TRACKING</span><h2>Applications</h2><p>Search candidates, track each position, and open a full application record.</p></div><span class="count">{filteredApplications.length} / {data.applications.length}</span></div>
-          <div class="application-filters"><label class="search-field"><Icon name="search" size={15}/><input bind:value={applicationSearch} placeholder="Search candidate, email or position" aria-label="Search applications" /></label><select bind:value={statusFilter} aria-label="Filter by application status"><option value="all">All stages</option>{#each statusStages as status}<option value={status}>{status.charAt(0).toUpperCase()+status.slice(1)}</option>{/each}</select></div>
-          {#if filteredApplications.length === 0}<div class="chart-empty">{data.applications.length ? 'No applications match your search and filters.' : 'Applications submitted through the portal will appear here automatically.'}</div>{:else}
-            <div class="table hr-table"><div class="tr th"><span>Candidate</span><span>Position</span><span>Stage</span><span>Last updated</span><span>Details</span></div>
-              {#each filteredApplications as application}
-                <div class="tr candidate hr-candidate-row"><span class="person"><i>{initials(application.applicant?.fullName)}</i><b>{application.applicant?.fullName ?? 'Unknown applicant'}<small>{application.applicant?.email ?? '—'}</small></b></span><span class="position-cell">{application.job?.title ?? 'Position removed'}<small>{application.job?.department ?? 'Department not set'}</small></span><span><em class="status {application.status}">{application.status}</em></span><span>{formatDate(application.updatedAt)}</span><button class="button quiet details-button" type="button" onclick={() => openApplication(application)}>Details <Icon name="external" size={13}/></button></div>
+          <strong>Open opportunities</strong>
+
+          <div class="aside-bottom">
+            <span class="status-dot"></span>
+            Browse published positions
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- JOB BOARD -->
+    <section class="jobs-section" id="jobs">
+      <div class="board-container">
+
+        <div class="section-heading">
+          <div>
+            <span class="section-index">
+              <span class="index-line"></span>
+              01 / OPEN OPPORTUNITIES
+            </span>
+
+            <h2>Explore available positions.</h2>
+
+            <p>
+              Search by role, keyword, location or employment type.
+            </p>
+          </div>
+
+          <div class="positions-count">
+            <span class="status-dot"></span>
+            <strong>{data.openJobs.length}</strong>
+            positions published
+          </div>
+        </div>
+
+        <!-- SEARCH -->
+        <div class="search-shell">
+
+          <label class="search-field keyword-field">
+            <span class="field-label">KEYWORD OR ROLE</span>
+
+            <span class="field-control">
+              <svg viewBox="0 0 24 24" width="18" height="18"
+                fill="none" stroke="currentColor"
+                stroke-width="1.8" aria-hidden="true">
+                <circle cx="10.8" cy="10.8" r="7"></circle>
+                <path d="m16 16 5 5"></path>
+              </svg>
+
+              <input
+                bind:value={query}
+                type="search"
+                placeholder="Job title, skill or department"
+                aria-label="Search job title, skill or department"
+              />
+            </span>
+          </label>
+
+          <label class="search-field location-field">
+            <span class="field-label">LOCATION</span>
+
+            <span class="field-control">
+              <svg viewBox="0 0 24 24" width="18" height="18"
+                fill="none" stroke="currentColor"
+                stroke-width="1.8" aria-hidden="true">
+                <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"></path>
+                <circle cx="12" cy="10" r="2.5"></circle>
+              </svg>
+
+              <input
+                bind:value={location}
+                placeholder="City or remote"
+                aria-label="Filter jobs by location"
+              />
+            </span>
+          </label>
+
+          <label class="search-field type-field">
+            <span class="field-label">EMPLOYMENT</span>
+
+            <select
+              bind:value={type}
+              aria-label="Filter by employment type"
+            >
+              <option value="All types">All employment types</option>
+              {#each employmentTypes as employmentType}
+                <option value={employmentType}>
+                  {employmentType}
+                </option>
               {/each}
-            </div>
+            </select>
+          </label>
+
+          <a class="search-action" href="#results">
+            View roles <span aria-hidden="true">↗</span>
+          </a>
+
+        </div>
+
+        <div class="results-toolbar" id="results">
+          <span>
+            Showing <strong>{matching.length}</strong>
+            of {data.openJobs.length} opportunities
+          </span>
+
+          {#if hasFilters}
+            <button onclick={clearFilters}>
+              Clear filters <span aria-hidden="true">×</span>
+            </button>
           {/if}
-        </section>
-      </div>
-    {:else if active === 'jobs'}
-      <div class="content">
-        <div class="head">
-          <div>
-            <span class="eyebrow green">{isHr ? 'HIRING' : 'CAREERS'}</span>
-            <h1>{isHr ? 'Your positions.' : 'Open positions.'}</h1>
-            <p>{isHr ? 'Publish and review real positions.' : 'Explore positions currently published by Origins.'}</p>
-          </div>
         </div>
 
-        {#if data.openJobs.length === 0}
-          <section class="empty panel">
-            <span class="eyebrow">NO OPEN POSITIONS</span>
-            <h2>There are no open jobs right now.</h2>
-            <p>New positions will appear here when an authorised HR user publishes them.</p>
-          </section>
-        {:else}
-          <section class="job-grid">
-  {#each data.openJobs as job}
-    <article class="job-card">
-      <div class="job-top">
-        <span class="status open">OPEN</span>
-        <span>{job.employmentType}</span>
-      </div>
+        <div class="job-layout">
 
-      <h2>{job.title}</h2>
+          <!-- JOB LIST COLUMN -->
+          <div class="jobs-list">
 
-      <p>{job.department} · {job.location}</p>
-
-      <p class="job-summary">
-        {job.description.length > 150
-          ? `${job.description.slice(0, 150)}…`
-          : job.description}
-      </p>
-
-      <small>Published {formatDate(job.createdAt)}</small>
-
-      {#if isHr}
-        <button
-          class="button quiet full"
-          type="button"
-          onclick={() => (active = 'pipeline')}
-        >
-          Open pipeline
-          <Icon name="arrow" size={13} />
-        </button>
-      {:else}
-        <button
-          class="button primary full"
-          type="button"
-          onclick={() => (selectedJob = job)}
-        >
-          View job
-          <Icon name="arrow" size={13} />
-        </button>
-      {/if}
-    </article>
-  {/each}
-</section>
-
-        {/if}
-
-        {#if isHr}
-          <section class="panel create-job">
-            <div><span class="eyebrow">NEW POSITION</span><h2>Publish a job</h2><p>Create a real job record. Published positions become available to applicants.</p></div>
-            <form method="POST" action="?/createJob" use:enhance>
-              <div class="form-grid">
-                <input name="title" placeholder="Job title" maxlength="160" required />
-                <input name="department" placeholder="Department" maxlength="160" required />
-                <input name="location" placeholder="Location" maxlength="160" required />
-                <input name="employmentType" placeholder="Full-time / Contract" maxlength="160" required />
+            <div class="list-heading">
+              <div>
+                <h3>All positions</h3>
+                <p>Select a role to view its complete description.</p>
               </div>
-              <textarea name="description" placeholder="Job description" maxlength="30000" required></textarea>
-              <button class="button primary" type="submit">Publish job</button>
-            </form>
-          </section>
-        {/if}
-      </div>
-    {:else if !isHr && active === 'applications'}
-      <div class="content">
-        <div class="head">
-          <div><span class="eyebrow green">YOUR ACCOUNT</span><h1>Your applications.</h1><p>Only records belonging to your authenticated applicant account are shown.</p></div>
-        </div>
 
-        {#if data.applications.length === 0}
-          <section class="empty panel">
-            <span class="eyebrow">NO APPLICATIONS</span>
-            <h2>Your workspace is ready.</h2>
-            <p>You have not submitted an application yet. New applicant accounts start with an empty workspace.</p>
-            <button class="button primary" type="button" onclick={() => (active = 'jobs')}>Browse open positions <Icon name="arrow" size={13} /></button>
-          </section>
-        {:else}
-          <section class="application-list">
-            {#each data.applications as application}
-              <article class="panel application-card">
-                <div class="app-main"><span class="eyebrow">APPLICATION</span><h2>{application.job?.title ?? 'Position'}</h2><p>{application.job?.department ?? '—'} · {application.job?.location ?? '—'}</p></div>
-                <div><span class="status {application.status}">{application.status}</span><small>Updated {formatDate(application.updatedAt)}</small></div>
-                <button class="button quiet" type="button" onclick={() => openApplication(application)}>Open <Icon name="external" size={13} /></button>
-              </article>
-            {/each}
-          </section>
-        {/if}
-      </div>
-    {:else if active === 'interviews'}
-      <div class="content">
-        <div class="head"><div><span class="eyebrow green">SCHEDULING</span><h1>Interviews.</h1><p>Join scheduled interviews using the Google Meet link supplied by HR.</p></div></div>
-        {#if isHr}
-          <section class="panel schedule-panel"><div class="panel-head"><div><span class="eyebrow">BOOK AN INTERVIEW</span><h2>Schedule for an applicant</h2><p>Add the Google Meet URL created by HR and attach it to the applicant’s schedule.</p></div></div>
-            <form method="POST" action="?/scheduleInterview" use:enhance={enhanceWithLoading}>
-              <div class="schedule-grid"><label>Application<select name="applicationId" required><option value="">Choose candidate and position</option>{#each data.applications as application}<option value={application.id}>{application.applicant?.fullName ?? 'Candidate'} — {application.job?.title ?? 'Position'} ({application.status})</option>{/each}</select></label><label>Interview title<input name="title" placeholder="e.g. Technical interview" maxlength="160" required /></label><label>Format<select name="type"><option value="video">Google Meet</option><option value="phone">Phone</option><option value="onsite">On-site</option></select></label><label class="meeting-link-field">Google Meet link<input name="meetingUrl" type="url" placeholder="https://meet.google.com/abc-defg-hij" pattern="https://meet\.google\.com/.*" /><small>Paste the meeting URL created by HR. Required for Google Meet interviews.</small></label><label>Starts at<input name="startsAt" type="datetime-local" required /></label><label>Ends at<input name="endsAt" type="datetime-local" required /></label></div>
-              <button class="button primary" type="submit" disabled={busyAction}>{#if busyAction}<span class="loading-spinner" aria-hidden="true"></span> Scheduling…{:else}Schedule interview <Icon name="arrow" size={13}/>{/if}</button>
-            </form>
-          </section>
-        {/if}
-        <section class="interview-calendar panel">
-          <div class="calendar-toolbar">
-            <div><span class="eyebrow">SCHEDULE OVERVIEW</span><h2>{calendarTitle}</h2><p>Interview dates sync from your saved application records.</p></div>
-            <div class="calendar-controls"><button type="button" aria-label="Previous month" onclick={() => shiftCalendar(-1)}>‹</button><button type="button" class="today-button" onclick={() => (calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button><button type="button" aria-label="Next month" onclick={() => shiftCalendar(1)}>›</button></div>
-          </div>
-          <div class="calendar-grid calendar-weekdays">{#each ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as weekday}<div>{weekday}</div>{/each}</div>
-          <div class="calendar-grid calendar-days">{#each calendarCells as cell (cell.key)}<div class:outside={!cell.inMonth} class:today={cell.today} class="calendar-day"><span class="day-number">{cell.day}</span>{#each cell.events.slice(0, 2) as event}<a class="calendar-event" href={event.meetingUrl || `/interview/${event.roomCode}`} target={event.meetingUrl ? '_blank' : undefined} rel={event.meetingUrl ? 'noopener noreferrer' : undefined}>{event.title}</a>{/each}{#if cell.events.length > 2}<span class="more-events">+{cell.events.length - 2} more</span>{/if}</div>{/each}</div>
-          <div class="calendar-legend"><span><i></i> Scheduled interview</span><span>{data.interviews.filter((item) => item.status !== 'cancelled').length} active interviews</span></div>
-        </section>
-        {#if data.interviews.length === 0}
-          <section class="empty panel"><span class="eyebrow">NO INTERVIEWS</span><h2>No interviews scheduled.</h2><p>When an interview is created for one of your applications, it will appear here automatically.</p></section>
-        {:else}
-          <section class="panel interview-list-panel">
-            <div class="table">
-              {#each data.interviews as interview}
-                <div class="interview-row">
-                  <div>
-                    <span class="status {interview.status}">{interview.status}</span>
-                    <h3>{interview.title}</h3>
-                    <small>{interview.type} · {formatDateTime(interview.startsAt)} — {formatDateTime(interview.endsAt)}</small>
-                  </div>
-                  <a class="button quiet" href={interview.meetingUrl || `/interview/${interview.roomCode}`} target={interview.meetingUrl ? '_blank' : undefined} rel={interview.meetingUrl ? 'noopener noreferrer' : undefined}>{interview.meetingUrl ? 'Join Google Meet' : 'Meeting link missing'}</a>
+              <label class="sort-field">
+                <span>Sort by</span>
+                <select bind:value={sort} aria-label="Sort positions">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="listing-stack">
+              {#each ordered as job (job.id)}
+                <article
+                  class="listing"
+                  class:chosen={current?.id === job.id}
+                >
+                  <button
+                    class="listing-main"
+                    onclick={() => selectJob(job.id)}
+                    aria-pressed={current?.id === job.id}
+                  >
+                    <div class="listing-top">
+                      <span class="department">{job.department}</span>
+
+                      {#if isNew(job.createdAt)}
+                        <span class="new-label">
+                          <span class="status-dot"></span>
+                          NEW
+                        </span>
+                      {/if}
+                    </div>
+
+                    <h4>{job.title}</h4>
+
+                    <div class="listing-meta">
+                      <span>{job.location}</span>
+                      <span class="meta-divider">/</span>
+                      <span>{job.employmentType}</span>
+                    </div>
+
+                    <p class="listing-excerpt">
+                      {job.description.slice(0, 145)}
+                      {job.description.length > 145 ? '…' : ''}
+                    </p>
+
+                    <div class="listing-footer">
+                      <span>Posted {shortDate(job.createdAt)}</span>
+                      <strong>View position <span>↗</span></strong>
+                    </div>
+                  </button>
+
+                  <button
+                    class="bookmark"
+                    class:saved={saved.includes(job.id)}
+                    aria-label={saved.includes(job.id)
+                      ? `Remove ${job.title} from saved positions`
+                      : `Save ${job.title}`}
+                    aria-pressed={saved.includes(job.id)}
+                    onclick={() => toggleSaved(job.id)}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="18"
+                      height="18"
+                      fill={saved.includes(job.id)
+                        ? 'currentColor'
+                        : 'none'}
+                      stroke="currentColor"
+                      stroke-width="1.7"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 3.5h12v17l-6-4-6 4z"></path>
+                    </svg>
+                  </button>
+
+                </article>
+              {:else}
+                <div class="empty-state">
+                  <div class="empty-symbol">⌕</div>
+                  <h4>No matching positions</h4>
+                  <p>
+                    Try another keyword or broaden your location
+                    and employment filters.
+                  </p>
+                  <button onclick={clearFilters}>Reset search ↗</button>
                 </div>
               {/each}
             </div>
-          </section>
-        {/if}
+
+            <p class="saved-note">
+              Saved positions are stored on this device.
+              Create an account to apply and track applications.
+            </p>
+
+          </div>
+
+          <!-- STICKY JOB DETAIL COLUMN -->
+          <aside
+            class="job-detail"
+            class:mobile-open={mobileDetails}
+            aria-label="Position details"
+          >
+            {#if current}
+              <div class="detail-topline">
+                <span>POSITION OVERVIEW</span>
+                <span>ORIGINS SOFTWARE</span>
+              </div>
+
+              <button
+                class="mobile-back"
+                onclick={() => mobileDetails = false}
+              >
+                ← Back to positions
+              </button>
+
+              <div class="detail-heading">
+                <span class="department">{current.department}</span>
+                <h3>{current.title}</h3>
+                <p>Discover the position and review its requirements.</p>
+              </div>
+
+              <div class="detail-facts">
+                <div>
+                  <span>LOCATION</span>
+                  <strong>{current.location}</strong>
+                </div>
+
+                <div>
+                  <span>EMPLOYMENT</span>
+                  <strong>{current.employmentType}</strong>
+                </div>
+
+                <div>
+                  <span>DATE POSTED</span>
+                  <strong>{shortDate(current.createdAt)}</strong>
+                </div>
+              </div>
+
+              <div class="detail-actions">
+                <a
+                  class="apply-button"
+                  href={data.signedIn
+                    ? `/account?job=${current.id}`
+                    : `/signup?next=${encodeURIComponent(`/account?job=${current.id}`)}`}
+                >
+                  {data.signedIn
+                    ? 'Continue to application'
+                    : 'Create account to apply'}
+                  <span aria-hidden="true">↗</span>
+                </a>
+
+                <button
+                  class="detail-save"
+                  aria-pressed={saved.includes(current.id)}
+                  onclick={() => toggleSaved(current.id)}
+                >
+                  {saved.includes(current.id)
+                    ? '✓ Saved position'
+                    : '+ Save position'}
+                </button>
+              </div>
+
+              <div class="detail-description">
+                <h4>About this role</h4>
+                <div>{current.description}</div>
+              </div>
+
+              <div class="detail-signoff">
+                <strong>ORIGINS SOFTWARE</strong>
+                <span>BUILD BEYOND BOUNDARIES.</span>
+              </div>
+            {:else}
+              <div class="detail-empty">
+                <h3>No position available</h3>
+                <p>
+                  Select a published opportunity to see more information.
+                </p>
+              </div>
+            {/if}
+          </aside>
+
+        </div>
       </div>
-       {:else if active === 'messages'}
-      <div class="content">
-        <div class="head">
+    </section>
+
+    <!-- COMPANY INTRODUCTION -->
+    <section class="company-section" id="about">
+      <div class="board-container company-layout">
+
+        <div class="company-title">
+          <span class="section-index">
+            <span class="index-line"></span>
+            02 / ABOUT OUR COMPANY
+          </span>
+
+          <h2>
+            Get to know
+            <span>Origins Software.</span>
+          </h2>
+        </div>
+
+        <div class="company-content">
+          <p class="company-lead">
+            We build software and digital solutions with a focus
+            on thoughtful engineering and meaningful outcomes.
+          </p>
+
+          <p>
+            Our Careers portal connects people with available
+            opportunities at Origins Software. Explore our published
+            positions, understand what each role involves, and learn
+            more about the company through our corporate website.
+          </p>
+
+          <a
+            class="company-link"
+            href="https://www.origins-software.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span>
+              <small>EXPLORE THE COMPANY</small>
+              <strong>Visit our corporate website</strong>
+              <em>www.origins-software.com</em>
+            </span>
+
+            <span class="company-link-icon" aria-hidden="true">↗</span>
+          </a>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SIMPLE PROCESS -->
+    <section class="process-section" id="process">
+      <div class="board-container">
+
+        <div class="process-heading">
           <div>
-            <span class="eyebrow green">MESSAGES</span>
-            <h1>Application conversations.</h1>
-            <p>Messages are stored against real application records.</p>
+            <span class="section-index">
+              <span class="index-line"></span>
+              03 / RECRUITMENT PROCESS
+            </span>
+
+            <h2>A straightforward way to apply.</h2>
+            <p>
+              From discovering a position to tracking your application.
+            </p>
           </div>
         </div>
 
-        {#if data.messages.length === 0}
-          <section class="empty panel">
-            <span class="eyebrow">NO MESSAGES</span>
-            <h2>No conversation yet.</h2>
+        <div class="process-grid">
+          <article>
+            <span class="step-number">01</span>
+            <h3>Explore a position</h3>
             <p>
-              {isHr
-                ? 'Messages will appear when you communicate with an applicant.'
-                : 'A recruiter can message you once your application is being reviewed.'}
+              Search current openings and review the full job description.
             </p>
-          </section>
-        {:else}
-          <section class="message-list">
-            {#each data.messages as message}
-              <article class="panel message-card">
-                <span class="eyebrow">
-                  {formatDateTime(message.createdAt)}
-                </span>
-                <p>{message.body}</p>
-              </article>
-            {/each}
-          </section>
-        {/if}
-
-        {#if selectedApplication}
-          <section class="panel compose-panel">
-            <span class="eyebrow">APPLICATION MESSAGE</span>
-            <h2>{selectedApplication.job?.title ?? 'Application'}</h2>
-
-            <form method="POST" action="?/sendMessage" use:enhance>
-              <input
-                type="hidden"
-                name="applicationId"
-                value={selectedApplication.id}
-              />
-              <label for="message-body">Message</label>
-              <textarea
-                id="message-body"
-                name="body"
-                placeholder="Write a message…"
-                maxlength="10000"
-                required
-              ></textarea>
-              <button class="button primary" type="submit">
-                Send message
-              </button>
-            </form>
-          </section>
-        {/if}
-      </div>
-
-    {:else if active === 'settings'}
-      <div class="content">
-        <div class="head"><div><span class="eyebrow green">ACCOUNT</span><h1>Settings.</h1><p>Your identity and access are controlled by your authenticated Supabase account.</p></div></div>
-        <section class="settings-grid">
-          <article class="panel">
-            <span class="eyebrow">PROFILE</span>
-            <h2>{data.profile.fullName}</h2>
-            <p>{data.profile.email}</p>
-            <div class="setting-row"><span>Role</span><strong>{data.profile.role.replace('_', ' ')}</strong></div>
-            <div class="setting-row"><span>Account created</span><strong>{formatDate(data.profile.createdAt)}</strong></div>
           </article>
-          <article class="panel">
-            <span class="eyebrow">ACCESS</span>
-            <h2>Authenticated workspace</h2>
-            <p>You cannot switch between HR and applicant workspaces. Your authenticated profile determines which workspace and records you can access.</p>
-            <form method="POST" action="?/logout"><button class="button quiet" type="submit">Sign out</button></form>
+
+          <article>
+            <span class="step-number">02</span>
+            <h3>Create your profile</h3>
+            <p>
+              Register with your email and prepare your candidate profile.
+            </p>
           </article>
-        </section>
+
+          <article>
+            <span class="step-number">03</span>
+            <h3>Apply and track</h3>
+            <p>
+              Submit your application and follow its status securely.
+            </p>
+          </article>
+        </div>
+
       </div>
-    {/if}
+    </section>
+
   </main>
-  <div class="brand-watermark" aria-hidden="true">ORIGINS SOFTWARE · UNITED KINGDOM</div>
-</div>
 
-{#if selectedJob && !isHr}
-  <div class="modal-backdrop" role="presentation">
-    <section
-      class="modal job-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="job-modal-title"
-    >
-      <button
-        class="modal-close"
-        type="button"
-        aria-label="Close"
-        onclick={closeModals}
-      >
-        ×
-      </button>
-
-      <span class="eyebrow green">OPEN POSITION</span>
-
-      <h2 id="job-modal-title">
-        {selectedJob.title}
-      </h2>
-
-      <p class="modal-meta">
-        {selectedJob.department}
-        ·
-        {selectedJob.location}
-        ·
-        {selectedJob.employmentType}
-      </p>
-
-      <div class="job-modal-description">
-        <span class="eyebrow">JOB DESCRIPTION</span>
-
-        <div class="description-scroll">
-          {selectedJob.description}
+  <footer class="career-footer">
+    <div class="board-container footer-inner">
+      <div class="footer-identity">
+        <img
+          src="/images/origins-logo.png"
+          width="34"
+          height="34"
+          alt=""
+        />
+        <div>
+          <strong>ORIGINS SOFTWARE</strong>
+          <span>© {new Date().getFullYear()} All rights reserved.</span>
         </div>
       </div>
 
-      <form
-        method="POST"
-        action="?/apply"
-        enctype="multipart/form-data"
-        use:enhance
-      >
-        <input
-          type="hidden"
-          name="jobId"
-          value={selectedJob.id}
-        />
+      <nav aria-label="Footer navigation">
+        <a href="https://www.origins-software.com/">Company</a>
+        <a href="https://www.origins-software.com/privacy">Privacy</a>
+        <a href="https://www.origins-software.com/terms">Terms</a>
+        <a href="/login">Candidate sign in</a>
+      </nav>
+    </div>
+  </footer>
 
-        <div class="apply-section">
-          <span class="eyebrow">APPLY FOR THIS POSITION</span>
-
-          <label for="cv-upload">
-            CV / Resume
-          </label>
-
-          <input
-            id="cv-upload"
-            name="resume"
-            type="file"
-            accept=".pdf,.doc,.docx"
-            aria-describedby="cv-upload-help"
-            on:change={handleResumeChange}
-            required
-          />
-
-          <small id="cv-upload-help" class="upload-help">
-            {selectedResumeName ? `Selected: ${selectedResumeName}` : 'PDF, DOC or DOCX. Maximum file size: 10 MB.'}
-          </small>
-
-          <label for="cover-letter">
-            Cover letter
-          </label>
-
-          <textarea
-            id="cover-letter"
-            name="coverLetter"
-            maxlength="10000"
-            placeholder="Tell Origins why this role is a good fit for you."
-          ></textarea>
-
-          <button
-            class="button primary full"
-            type="submit"
-          >
-            Submit application
-          </button>
-        </div>
-      </form>
-    </section>
-  </div>
-{/if}
-
-{#if selectedApplication}
-  <div class="modal-backdrop" role="presentation">
-    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="application-modal-title">
-      <button class="modal-close" type="button" aria-label="Close" onclick={closeModals}>×</button>
-      <span class="eyebrow green">APPLICATION</span>
-      <h2 id="application-modal-title">{selectedApplication.job?.title ?? 'Application'}</h2>
-      <p class="modal-meta">{selectedApplication.applicant?.fullName ?? data.profile.fullName} · {selectedApplication.status}</p>
-      {#if isHr}
-        <div class="candidate-detail-summary"><div><small>Candidate email</small><strong>{selectedApplication.applicant?.email ?? 'Not available'}</strong></div><div><small>Position</small><strong>{selectedApplication.job?.title ?? 'Position removed'}</strong></div><div><small>Department</small><strong>{selectedApplication.job?.department ?? '—'}</strong></div></div>
-        <div class="candidate-cover-letter"><span class="eyebrow">COVER LETTER</span><p>{selectedApplication.coverLetter || 'No cover letter was included with this application.'}</p></div>
-      {/if}
-      <div class="application-progress"><span class="eyebrow">APPLICATION PROGRESS</span><div class="progress-track"><i style={`width:${Math.max(8, (statusStages.indexOf(selectedApplication.status) + 1) / 6 * 100)}%`}></i></div><small>Applied {formatDate(selectedApplication.appliedAt)} · Last updated {formatDate(selectedApplication.updatedAt)}</small></div>
-
-      {#if isHr}
-        <form method="POST" action="?/updateApplication" use:enhance={enhanceWithLoading}>
-          <input type="hidden" name="applicationId" value={selectedApplication.id} />
-          <label for="application-status">Status</label>
-          <select id="application-status" name="status" value={selectedApplication.status}>
-            <option value="applied">Applied</option>
-            <option value="screening">Screening</option>
-            <option value="interview">Interview</option>
-            <option value="assessment">Assessment</option>
-            <option value="offer">Offer</option>
-            <option value="hired">Hired</option>
-            <option value="rejected">Rejected</option>
-            <option value="withdrawn">Withdrawn</option>
-          </select>
-          <label for="application-note">Internal note</label>
-          <textarea id="application-note" name="note" maxlength="5000" placeholder="Optional internal note"></textarea>
-          <button class="button primary full" type="submit" disabled={busyAction}>{#if busyAction}<span class="loading-spinner" aria-hidden="true"></span> Updating status…{:else}Update application status{/if}</button>
-        </form>
-        <section class="application-detail-block"><span class="eyebrow">INTERVIEW HISTORY</span><h3>Interviews for this application</h3>
-          {#if selectedApplicationInterviews.length === 0}<p class="detail-muted">No interviews are linked to this application yet. Use Interviews → Schedule for an applicant to book one.</p>{:else}
-            {#each selectedApplicationInterviews as interview}<div class="detail-interview"><span class="status {interview.status}">{interview.status}</span><strong>{interview.title}</strong><small>{interview.type} · {formatDateTime(interview.startsAt)} — {formatDateTime(interview.endsAt)}</small><a href={interview.meetingUrl || `/interview/${interview.roomCode}`} target={interview.meetingUrl ? '_blank' : undefined} rel={interview.meetingUrl ? 'noopener noreferrer' : undefined}>{interview.meetingUrl ? 'Join Google Meet ↗' : 'Google Meet link not added yet'}</a></div>{/each}
-          {/if}
-        </section>
-      {:else}
-        <p>{selectedApplication.coverLetter || 'No cover letter was submitted.'}</p>
-        <button class="button primary full" type="button" onclick={() => { selectedApplication = null; active = 'messages'; }}>Open messages</button>
-      {/if}
-    </section>
-  </div>
-{/if}
-
-{#if toast}
-  <div class="toast" role="status" aria-live="polite"><i></i>{toast}</div>
-{/if}
+</div>
