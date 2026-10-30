@@ -13,6 +13,9 @@
   let selected: string | null = null;
   let saved: string[] = [];
   let mobileDetails = false;
+  let typeDropdownOpen = false;
+  let sortDropdownOpen = false;
+  let keywordFocused = false;
 
   $: employmentTypes = [
     ...new Set(data.openJobs.map((job) => job.employmentType))
@@ -88,6 +91,16 @@
     return age >= 0 && age <= 7 * 86400000;
   }
 
+  function handleOutsideClick(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.type-field')) {
+      typeDropdownOpen = false;
+    }
+    if (!target.closest('.sort-field')) {
+      sortDropdownOpen = false;
+    }
+  }
+
   onMount(() => {
     try {
       const items = JSON.parse(
@@ -112,6 +125,8 @@
     content="Discover career opportunities at Origins Software. Explore our open positions, learn about the company and apply securely through our candidate portal."
   />
 </svelte:head>
+
+<svelte:window onclick={handleOutsideClick} />
 
 <div class="careers">
 
@@ -260,11 +275,14 @@
                 type="search"
                 placeholder="Job title, skill or department"
                 aria-label="Search job title, skill or department"
+                onfocus={() => keywordFocused = true}
+                onblur={() => keywordFocused = false}
+                style="width: {keywordFocused ? '260px' : '170px'}; transition: width 0.3s ease; text-overflow: ellipsis;"
               />
             </span>
           </label>
 
-          <label class="search-field location-field">
+          <label class="search-field location-field" style="display: flex; flex-direction: column; align-items: center;">
             <span class="field-label">LOCATION</span>
 
             <span class="field-control">
@@ -283,21 +301,56 @@
             </span>
           </label>
 
-          <label class="search-field type-field">
+          <div class="search-field type-field">
             <span class="field-label">EMPLOYMENT</span>
 
-            <select
-              bind:value={type}
-              aria-label="Filter by employment type"
-            >
-              <option value="All types">All employment types</option>
-              {#each employmentTypes as employmentType}
-                <option value={employmentType}>
-                  {employmentType}
-                </option>
-              {/each}
-            </select>
-          </label>
+            <div class="custom-select" style="position: relative; width: 100%;">
+              <button
+                type="button"
+                class="field-control"
+                onclick={() => typeDropdownOpen = !typeDropdownOpen}
+                aria-haspopup="listbox"
+                aria-expanded={typeDropdownOpen}
+                style="width: 100%; display: flex; justify-content: space-between; align-items: center; background: transparent; border: none; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit;"
+              >
+                <span>{type === 'All types' ? 'All employment types' : type}</span>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" style="transition: transform 0.2s;" style:transform={typeDropdownOpen ? 'rotate(180deg)' : 'rotate(0)'}>
+                  <path d="m6 9 6 6 6-6"></path>
+                </svg>
+              </button>
+
+              {#if typeDropdownOpen}
+                <div 
+                  class="custom-options" 
+                  role="listbox"
+                  style="position: absolute; top: calc(100% + 8px); left: 0; width: 100%; z-index: 50; background: var(--bg-surface, #1e1e1e); border: 1px solid var(--border-color, #333); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;"
+                >
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={type === 'All types'}
+                    class:selected={type === 'All types'}
+                    style="text-align: left; padding: 10px 16px; background: transparent; border: none; cursor: pointer; color: inherit; font: inherit;"
+                    onclick={() => { type = 'All types'; typeDropdownOpen = false; }}
+                  >
+                    All employment types
+                  </button>
+                  {#each employmentTypes as employmentType}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={type === employmentType}
+                      class:selected={type === employmentType}
+                      style="text-align: left; padding: 10px 16px; background: transparent; border: none; cursor: pointer; color: inherit; font: inherit;"
+                      onclick={() => { type = employmentType; typeDropdownOpen = false; }}
+                    >
+                      {employmentType}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
 
           <a class="search-action" href="#results">
             View roles <span aria-hidden="true">↗</span>
@@ -329,13 +382,54 @@
                 <p>Select a role to view its complete description.</p>
               </div>
 
-              <label class="sort-field">
+              <div class="sort-field" style="display: flex; align-items: center; gap: 8px;">
                 <span>Sort by</span>
-                <select bind:value={sort} aria-label="Sort positions">
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                </select>
-              </label>
+                
+                <div class="custom-select" style="position: relative;">
+                  <button
+                    type="button"
+                    class="field-control"
+                    onclick={() => sortDropdownOpen = !sortDropdownOpen}
+                    aria-haspopup="listbox"
+                    aria-expanded={sortDropdownOpen}
+                    style="display: flex; gap: 8px; justify-content: space-between; align-items: center; background: transparent; border: none; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit;"
+                  >
+                    <span>{sort === 'newest' ? 'Newest first' : 'Oldest first'}</span>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" style="transition: transform 0.2s;" style:transform={sortDropdownOpen ? 'rotate(180deg)' : 'rotate(0)'}>
+                      <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+                  </button>
+
+                  {#if sortDropdownOpen}
+                    <div 
+                      class="custom-options" 
+                      role="listbox"
+                      style="position: absolute; top: calc(100% + 8px); right: 0; min-width: 140px; z-index: 50; background: var(--bg-surface, #1e1e1e); border: 1px solid var(--border-color, #333); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;"
+                    >
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={sort === 'newest'}
+                        class:selected={sort === 'newest'}
+                        style="text-align: left; padding: 10px 16px; background: transparent; border: none; cursor: pointer; color: inherit; font: inherit; white-space: nowrap;"
+                        onclick={() => { sort = 'newest'; sortDropdownOpen = false; }}
+                      >
+                        Newest first
+                      </button>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={sort === 'oldest'}
+                        class:selected={sort === 'oldest'}
+                        style="text-align: left; padding: 10px 16px; background: transparent; border: none; cursor: pointer; color: inherit; font: inherit; white-space: nowrap;"
+                        onclick={() => { sort = 'oldest'; sortDropdownOpen = false; }}
+                      >
+                        Oldest first
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              </div>
             </div>
 
             <div class="listing-stack">
@@ -375,35 +469,16 @@
 
                     <div class="listing-footer">
                       <span>Posted {shortDate(job.createdAt)}</span>
-                      <strong>View position <span>↗</span></strong>
+                      <span aria-hidden="true" style="opacity: 0.5; display: flex; align-items: center;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                          <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                      </span>
                     </div>
                   </button>
 
-                  <button
-                    class="bookmark"
-                    class:saved={saved.includes(job.id)}
-                    aria-label={saved.includes(job.id)
-                      ? `Remove ${job.title} from saved positions`
-                      : `Save ${job.title}`}
-                    aria-pressed={saved.includes(job.id)}
-                    onclick={() => toggleSaved(job.id)}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="18"
-                      height="18"
-                      fill={saved.includes(job.id)
-                        ? 'currentColor'
-                        : 'none'}
-                      stroke="currentColor"
-                      stroke-width="1.7"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M6 3.5h12v17l-6-4-6 4z"></path>
-                    </svg>
-                  </button>
-
+                  
                 </article>
               {:else}
                 <div class="empty-state">
@@ -418,11 +493,7 @@
               {/each}
             </div>
 
-            <p class="saved-note">
-              Saved positions are stored on this device.
-              Create an account to apply and track applications.
-            </p>
-
+            
           </div>
 
           <!-- STICKY JOB DETAIL COLUMN -->
@@ -480,15 +551,7 @@
                   <span aria-hidden="true">↗</span>
                 </a>
 
-                <button
-                  class="detail-save"
-                  aria-pressed={saved.includes(current.id)}
-                  onclick={() => toggleSaved(current.id)}
-                >
-                  {saved.includes(current.id)
-                    ? '✓ Saved position'
-                    : '+ Save position'}
-                </button>
+                
               </div>
 
               <div class="detail-description">
