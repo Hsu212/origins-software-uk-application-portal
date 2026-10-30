@@ -7,6 +7,7 @@
   import { enhance } from '$app/forms';
   import type { ActionData, PageData } from './$types';
   import Icon from '$lib/Icon.svelte';
+  import { onMount } from 'svelte';
 
   export let data: PageData;
   export let form: ActionData | null = null;
@@ -19,18 +20,28 @@
 
   let active = isHr ? 'pipeline' : 'jobs';
   let selectedJob: Job | null = null;
-  import { onMount } from 'svelte';
-  onMount(() => { const id = new URLSearchParams(window.location.search).get('job'); if (id) { active = 'jobs'; selectedJob = data.openJobs.find(j => j.id === id) ?? null; } });
+  let mobileMenuOpen = false; // Added state for mobile menu toggle
+
+  onMount(() => { 
+    const id = new URLSearchParams(window.location.search).get('job'); 
+    if (id) { 
+      active = 'jobs'; 
+      selectedJob = data.openJobs.find(j => j.id === id) ?? null; 
+    } 
+  });
+  
   let selectedApplication: Application | null = null;
   let toast = '';
   let applicationSearch = '';
   let statusFilter = 'all';
   let busyAction = false;
   let selectedResumeName = ''; 
+  
   function handleResumeChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     selectedResumeName = input.files?.[0]?.name ?? '';
   }
+  
   const statusStages = ['applied', 'screening', 'interview', 'assessment', 'offer', 'hired', 'rejected', 'withdrawn'];
   $: filteredApplications = data.applications.filter((application) => {
     const haystack = `${application.applicant?.fullName ?? ''} ${application.applicant?.email ?? ''} ${application.job?.title ?? ''}`.toLowerCase();
@@ -47,6 +58,7 @@
       try { await update(); } finally { busyAction = false; }
     };
   }
+  
   let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
   $: calendarTitle = calendarMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
@@ -86,13 +98,7 @@
 
   function initials(name: string | null | undefined) {
     return (
-      name
-        ?.split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join('')
-        .toUpperCase() || 'O'
+      name?.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'O'
     );
   }
 
@@ -100,24 +106,14 @@
     if (!value) return '—';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('en', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }).format(date);
+    return new Intl.DateTimeFormat('en', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
   }
 
   function formatDateTime(value: string | Date | null | undefined) {
     if (!value) return '—';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('en', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    return new Intl.DateTimeFormat('en', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
   }
 
   function notify(message: string) {
@@ -136,6 +132,12 @@
     selectedApplication = null;
   }
 
+  // Helper to switch tabs and close menu on mobile
+  function switchTab(tab: string) {
+    active = tab;
+    mobileMenuOpen = false;
+  }
+
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = 'dark';
     localStorage.removeItem('origins-talent-theme');
@@ -148,7 +150,15 @@
 </svelte:head>
 
 <div class="app origins-talent-app">
-  <aside class="sidebar">
+  
+  <!-- Mobile Menu Backdrop -->
+  {#if mobileMenuOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="mobile-menu-backdrop" onclick={() => (mobileMenuOpen = false)}></div>
+  {/if}
+
+  <aside class="sidebar" class:mobile-open={mobileMenuOpen}>
     <a class="brand" href="/" aria-label="Origins careers home">
       <img class="brand-logo" src="/images/origins-logo.png" alt="Origins" />
       <span><b>ORIGINS</b><small>TALENT</small></span>
@@ -164,35 +174,35 @@
       <span class="nav-title">WORKSPACE</span>
 
       {#if isHr}
-        <button class:active={active === 'pipeline'} type="button" onclick={() => (active = 'pipeline')}>
+        <button class:active={active === 'pipeline'} type="button" onclick={() => switchTab('pipeline')}>
           <span class="nav-icon"><Icon name="users" size={16} /></span>Pipeline
         </button>
-        <button class:active={active === 'jobs'} type="button" onclick={() => (active = 'jobs')}>
+        <button class:active={active === 'jobs'} type="button" onclick={() => switchTab('jobs')}>
           <span class="nav-icon"><Icon name="briefcase" size={16} /></span>Jobs
         </button>
-        <button class:active={active === 'interviews'} type="button" onclick={() => (active = 'interviews')}>
+        <button class:active={active === 'interviews'} type="button" onclick={() => switchTab('interviews')}>
           <span class="nav-icon"><Icon name="calendar" size={16} /></span>Interviews
         </button>
-        <button class:active={active === 'messages'} type="button" onclick={() => (active = 'messages')}>
+        <button class:active={active === 'messages'} type="button" onclick={() => switchTab('messages')}>
           <span class="nav-icon"><Icon name="message" size={16} /></span>Messages
         </button>
       {:else}
-        <button class:active={active === 'applications'} type="button" onclick={() => (active = 'applications')}>
+        <button class:active={active === 'applications'} type="button" onclick={() => switchTab('applications')}>
           <span class="nav-icon"><Icon name="file" size={16} /></span>My applications
         </button>
-        <button class:active={active === 'jobs'} type="button" onclick={() => (active = 'jobs')}>
+        <button class:active={active === 'jobs'} type="button" onclick={() => switchTab('jobs')}>
           <span class="nav-icon"><Icon name="briefcase" size={16} /></span>Open positions
         </button>
-        <button class:active={active === 'interviews'} type="button" onclick={() => (active = 'interviews')}>
+        <button class:active={active === 'interviews'} type="button" onclick={() => switchTab('interviews')}>
           <span class="nav-icon"><Icon name="calendar" size={16} /></span>Interviews
         </button>
-        <button class:active={active === 'messages'} type="button" onclick={() => (active = 'messages')}>
+        <button class:active={active === 'messages'} type="button" onclick={() => switchTab('messages')}>
           <span class="nav-icon"><Icon name="message" size={16} /></span>Messages
         </button>
       {/if}
 
       <span class="nav-title second">ACCOUNT</span>
-      <button class:active={active === 'settings'} type="button" onclick={() => (active = 'settings')}>
+      <button class:active={active === 'settings'} type="button" onclick={() => switchTab('settings')}>
         <span class="nav-icon"><Icon name="settings" size={16} /></span>Settings
       </button>
     </nav>
@@ -212,6 +222,15 @@
 
   <main>
     <header class="topbar">
+      <!-- Added Mobile Toggle Button -->
+      <button class="mobile-menu-toggle" type="button" aria-label="Toggle menu" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      
       <div class="crumb">
         <span>ORIGINS</span><strong>·</strong><strong>{isHr ? 'Talent workspace' : 'Applicant workspace'}</strong>
       </div>
@@ -221,6 +240,7 @@
       </div>
     </header>
 
+    <!-- Rest of your application content views remains the same -->
     {#if isHr && active === 'pipeline'}
       <div class="content">
         <div class="head">
@@ -229,7 +249,7 @@
             <h1>Hiring pipeline.</h1>
             <p>Review authenticated candidate applications and move them through your real hiring workflow.</p>
           </div>
-          <button class="button primary" type="button" onclick={() => (active = 'jobs')}>Manage jobs <Icon name="arrow" size={13} /></button>
+          <button class="button primary" type="button" onclick={() => switchTab('jobs')}>Manage jobs <Icon name="arrow" size={13} /></button>
         </div>
 
         <section class="metrics hr-metrics">
@@ -251,7 +271,7 @@
             {/if}
           </article>
           <article class="panel upcoming-panel">
-            <div class="panel-head"><div><span class="eyebrow">NEXT UP</span><h2>Interview schedule</h2><p>Upcoming booked interviews.</p></div><button class="text-btn" type="button" onclick={() => (active = 'interviews')}>View calendar →</button></div>
+            <div class="panel-head"><div><span class="eyebrow">NEXT UP</span><h2>Interview schedule</h2><p>Upcoming booked interviews.</p></div><button class="text-btn" type="button" onclick={() => switchTab('interviews')}>View calendar →</button></div>
             {#if upcomingInterviews.length === 0}<div class="chart-empty">No upcoming interviews scheduled.</div>{:else}
               {#each upcomingInterviews as interview}
                 {@const related = data.applications.find((item) => item.id === interview.applicationId)}
@@ -291,48 +311,30 @@
           </section>
         {:else}
           <section class="job-grid">
-  {#each data.openJobs as job}
-    <article class="job-card">
-      <div class="job-top">
-        <span class="status open">OPEN</span>
-        <span>{job.employmentType}</span>
-      </div>
+            {#each data.openJobs as job}
+              <article class="job-card">
+                <div class="job-top">
+                  <span class="status open">OPEN</span>
+                  <span>{job.employmentType}</span>
+                </div>
 
-      <h2>{job.title}</h2>
+                <h2>{job.title}</h2>
+                <p>{job.department} · {job.location}</p>
 
-      <p>{job.department} · {job.location}</p>
+                <p class="job-summary">
+                  {job.description.length > 150 ? `${job.description.slice(0, 150)}…` : job.description}
+                </p>
 
-      <p class="job-summary">
-        {job.description.length > 150
-          ? `${job.description.slice(0, 150)}…`
-          : job.description}
-      </p>
-
-      <small>Published {formatDate(job.createdAt)}</small>
-
-      {#if isHr}
-        <button
-          class="button quiet full"
-          type="button"
-          onclick={() => (active = 'pipeline')}
-        >
-          Open pipeline
-          <Icon name="arrow" size={13} />
-        </button>
-      {:else}
-        <button
-          class="button primary full"
-          type="button"
-          onclick={() => (selectedJob = job)}
-        >
-          View job
-          <Icon name="arrow" size={13} />
-        </button>
-      {/if}
-    </article>
-  {/each}
-</section>
-
+                <small style="margin-bottom: 16px;">Published {formatDate(job.createdAt)}</small>
+                
+                {#if isHr}
+                  <button class="button quiet full" type="button" onclick={() => switchTab('pipeline')}>Open pipeline <Icon name="arrow" size={13} /></button>
+                {:else}
+                  <button class="button primary full" type="button" onclick={() => (selectedJob = job)}>View job <Icon name="arrow" size={13} /></button>
+                {/if}
+              </article>
+            {/each}
+          </section>
         {/if}
 
         {#if isHr}
@@ -362,7 +364,7 @@
             <span class="eyebrow">NO APPLICATIONS</span>
             <h2>Your workspace is ready.</h2>
             <p>You have not submitted an application yet. New applicant accounts start with an empty workspace.</p>
-            <button class="button primary" type="button" onclick={() => (active = 'jobs')}>Browse open positions <Icon name="arrow" size={13} /></button>
+            <button class="button primary" type="button" onclick={() => switchTab('jobs')}>Browse open positions <Icon name="arrow" size={13} /></button>
           </section>
         {:else}
           <section class="application-list">
@@ -415,7 +417,7 @@
           </section>
         {/if}
       </div>
-       {:else if active === 'messages'}
+    {:else if active === 'messages'}
       <div class="content">
         <div class="head">
           <div>
@@ -429,19 +431,13 @@
           <section class="empty panel">
             <span class="eyebrow">NO MESSAGES</span>
             <h2>No conversation yet.</h2>
-            <p>
-              {isHr
-                ? 'Messages will appear when you communicate with an applicant.'
-                : 'A recruiter can message you once your application is being reviewed.'}
-            </p>
+            <p>{isHr ? 'Messages will appear when you communicate with an applicant.' : 'A recruiter can message you once your application is being reviewed.'}</p>
           </section>
         {:else}
           <section class="message-list">
             {#each data.messages as message}
               <article class="panel message-card">
-                <span class="eyebrow">
-                  {formatDateTime(message.createdAt)}
-                </span>
+                <span class="eyebrow">{formatDateTime(message.createdAt)}</span>
                 <p>{message.body}</p>
               </article>
             {/each}
@@ -455,27 +451,14 @@
             {#if selectedApplication.resumePath}<p><a class="button quiet" href={`/cv/${selectedApplication.id}`} target="_blank" rel="noopener noreferrer">Download CV ↗</a></p>{/if}
 
             <form method="POST" action="?/sendMessage" use:enhance>
-              <input
-                type="hidden"
-                name="applicationId"
-                value={selectedApplication.id}
-              />
+              <input type="hidden" name="applicationId" value={selectedApplication.id} />
               <label for="message-body">Message</label>
-              <textarea
-                id="message-body"
-                name="body"
-                placeholder="Write a message…"
-                maxlength="10000"
-                required
-              ></textarea>
-              <button class="button primary" type="submit">
-                Send message
-              </button>
+              <textarea id="message-body" name="body" placeholder="Write a message…" maxlength="10000" required></textarea>
+              <button class="button primary" type="submit">Send message</button>
             </form>
           </section>
         {/if}
       </div>
-
     {:else if active === 'settings'}
       <div class="content">
         <div class="head"><div><span class="eyebrow green">ACCOUNT</span><h1>Settings.</h1><p>Your identity and access are controlled by your authenticated Supabase account.</p></div></div>
@@ -500,96 +483,26 @@
   <div class="brand-watermark" aria-hidden="true">ORIGINS SOFTWARE · UNITED KINGDOM</div>
 </div>
 
+<!-- Modals remain the same -->
 {#if selectedJob && !isHr}
   <div class="modal-backdrop" role="presentation">
     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-    <section
-      class="modal job-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="job-modal-title"
-    >
-      <button
-        class="modal-close"
-        type="button"
-        aria-label="Close"
-        onclick={closeModals}
-      >
-        ×
-      </button>
-
+    <section class="modal job-modal" role="dialog" aria-modal="true" aria-labelledby="job-modal-title">
+      <button class="modal-close" type="button" aria-label="Close" onclick={closeModals}>×</button>
       <span class="eyebrow green">OPEN POSITION</span>
-
-      <h2 id="job-modal-title">
-        {selectedJob.title}
-      </h2>
-
-      <p class="modal-meta">
-        {selectedJob.department}
-        ·
-        {selectedJob.location}
-        ·
-        {selectedJob.employmentType}
-      </p>
-
-      <div class="job-modal-description">
-        <span class="eyebrow">JOB DESCRIPTION</span>
-
-        <div class="description-scroll">
-          {selectedJob.description}
-        </div>
-      </div>
-
-      <form
-        method="POST"
-        action="?/apply"
-        enctype="multipart/form-data"
-        use:enhance
-      >
-        <input
-          type="hidden"
-          name="jobId"
-          value={selectedJob.id}
-        />
-
+      <h2 id="job-modal-title">{selectedJob.title}</h2>
+      <p class="modal-meta">{selectedJob.department} · {selectedJob.location} · {selectedJob.employmentType}</p>
+      <div class="job-modal-description"><span class="eyebrow">JOB DESCRIPTION</span><div class="description-scroll">{selectedJob.description}</div></div>
+      <form method="POST" action="?/apply" enctype="multipart/form-data" use:enhance>
+        <input type="hidden" name="jobId" value={selectedJob.id} />
         <div class="apply-section">
           <span class="eyebrow">APPLY FOR THIS POSITION</span>
-
-          <label for="cv-upload">
-            CV / Resume
-          </label>
-
-          <input
-            id="cv-upload"
-            name="resume"
-            type="file"
-            accept=".pdf,.doc,.docx"
-            aria-describedby="cv-upload-help"
-            onchange={handleResumeChange}
-            required
-          />
-
-          <small id="cv-upload-help" class="upload-help">
-            {selectedResumeName ? `Selected: ${selectedResumeName}` : 'PDF, DOC or DOCX. Maximum file size: 10 MB.'}
-          </small>
-
-          <label for="cover-letter">
-            Cover letter
-          </label>
-
-          <textarea
-            id="cover-letter"
-            name="coverLetter"
-            maxlength="10000"
-            placeholder="Tell Origins why this role is a good fit for you."
-          ></textarea>
-
-          <button
-            class="button primary full"
-            type="submit"
-          >
-            Submit application
-          </button>
+          <label for="cv-upload">CV / Resume</label>
+          <input id="cv-upload" name="resume" type="file" accept=".pdf,.doc,.docx" aria-describedby="cv-upload-help" onchange={handleResumeChange} required />
+          <small id="cv-upload-help" class="upload-help">{selectedResumeName ? `Selected: ${selectedResumeName}` : 'PDF, DOC or DOCX. Maximum file size: 10 MB.'}</small>
+          <label for="cover-letter">Cover letter</label>
+          <textarea id="cover-letter" name="coverLetter" maxlength="10000" placeholder="Tell Origins why this role is a good fit for you."></textarea>
+          <button class="button primary full" type="submit">Submit application</button>
         </div>
       </form>
     </section>
@@ -644,3 +557,56 @@
 {#if toast}
   <div class="toast" role="status" aria-live="polite"><i></i>{toast}</div>
 {/if}
+
+<style>
+  /* Base styles for the toggle button */
+  .mobile-menu-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .mobile-menu-toggle:hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .mobile-menu-backdrop {
+    display: none;
+  }
+
+  /* Target exact breakpoint where app.css hides the sidebar (max-width: 850px) */
+  @media (max-width: 850px) {
+    .mobile-menu-toggle {
+      display: inline-grid;
+      place-items: center;
+      margin-right: 12px;
+    }
+    
+    /* Override app.css `display: none` for sidebar when opened via toggle */
+    .sidebar.mobile-open {
+      display: flex !important;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 200;
+      width: 260px;
+      background: var(--surface);
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.6);
+      transform: translateX(0);
+    }
+
+    .mobile-menu-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      z-index: 150;
+    }
+  }
+</style>
