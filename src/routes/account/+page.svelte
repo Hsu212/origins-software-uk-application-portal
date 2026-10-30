@@ -20,7 +20,8 @@
 
   let active = isHr ? 'pipeline' : 'jobs';
   let selectedJob: Job | null = null;
-  let mobileMenuOpen = false; // Added state for mobile menu toggle
+  let mobileMenuOpen = false; 
+  let submittedJobIds: string[] = []; // Tracking submitted jobs by ID
 
   onMount(() => { 
     const id = new URLSearchParams(window.location.search).get('job'); 
@@ -132,7 +133,6 @@
     selectedApplication = null;
   }
 
-  // Helper to switch tabs and close menu on mobile
   function switchTab(tab: string) {
     active = tab;
     mobileMenuOpen = false;
@@ -151,7 +151,6 @@
 
 <div class="app origins-talent-app">
   
-  <!-- Mobile Menu Backdrop -->
   {#if mobileMenuOpen}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -222,7 +221,6 @@
 
   <main>
     <header class="topbar">
-      <!-- Added Mobile Toggle Button -->
       <button class="mobile-menu-toggle" type="button" aria-label="Toggle menu" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -240,7 +238,6 @@
       </div>
     </header>
 
-    <!-- Rest of your application content views remains the same -->
     {#if isHr && active === 'pipeline'}
       <div class="content">
         <div class="head">
@@ -326,10 +323,11 @@
                 </p>
 
                 <small style="margin-bottom: 16px;">Published {formatDate(job.createdAt)}</small>
-                
+
                 {#if isHr}
                   <button class="button quiet full" type="button" onclick={() => switchTab('pipeline')}>Open pipeline <Icon name="arrow" size={13} /></button>
                 {:else}
+                  <!-- Just open the job, no need to reset submitted status -->
                   <button class="button primary full" type="button" onclick={() => (selectedJob = job)}>View job <Icon name="arrow" size={13} /></button>
                 {/if}
               </article>
@@ -483,7 +481,6 @@
   <div class="brand-watermark" aria-hidden="true">ORIGINS SOFTWARE · UNITED KINGDOM</div>
 </div>
 
-<!-- Modals remain the same -->
 {#if selectedJob && !isHr}
   <div class="modal-backdrop" role="presentation">
     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
@@ -493,17 +490,53 @@
       <h2 id="job-modal-title">{selectedJob.title}</h2>
       <p class="modal-meta">{selectedJob.department} · {selectedJob.location} · {selectedJob.employmentType}</p>
       <div class="job-modal-description"><span class="eyebrow">JOB DESCRIPTION</span><div class="description-scroll">{selectedJob.description}</div></div>
-      <form method="POST" action="?/apply" enctype="multipart/form-data" use:enhance>
-        <input type="hidden" name="jobId" value={selectedJob.id} />
-        <div class="apply-section">
-          <span class="eyebrow">APPLY FOR THIS POSITION</span>
-          <label for="cv-upload">CV / Resume</label>
-          <input id="cv-upload" name="resume" type="file" accept=".pdf,.doc,.docx" aria-describedby="cv-upload-help" onchange={handleResumeChange} required />
-          <small id="cv-upload-help" class="upload-help">{selectedResumeName ? `Selected: ${selectedResumeName}` : 'PDF, DOC or DOCX. Maximum file size: 10 MB.'}</small>
-          <label for="cover-letter">Cover letter</label>
-          <textarea id="cover-letter" name="coverLetter" maxlength="10000" placeholder="Tell Origins why this role is a good fit for you."></textarea>
-          <button class="button primary full" type="submit">Submit application</button>
-        </div>
+      
+      <form
+        method="POST"
+        action="?/apply"
+        enctype="multipart/form-data"
+        use:enhance={() => {
+          busyAction = true;
+          return async ({ update, result }) => {
+            busyAction = false;
+            
+            // FIX: Added 'selectedJob' check to satisfy TypeScript in async callback
+            if (result.type !== 'error' && selectedJob) {
+              submittedJobIds = [...submittedJobIds, selectedJob.id]; 
+            }
+            
+            await update({ reset: false });
+          };
+        }}
+      >
+        <!-- FIX: Added optional chaining (?.) -->
+        <input type="hidden" name="jobId" value={selectedJob?.id} />
+
+        <!-- FIX: Added selectedJob?.id check to satisfy TypeScript template compilation -->
+        {#if selectedJob?.id && (submittedJobIds.includes(selectedJob.id) || data.applications.some(app => app.job?.id === selectedJob?.id))}
+          <div class="apply-section" style="text-align: center; padding: 40px 0;">
+            <div style="color: var(--success); font-size: 45px; margin-bottom: 12px; line-height: 1;">✓</div>
+            <h3 style="margin: 0 0 8px; font-size: 18px;">Application submitted!</h3>
+            <p style="color: var(--muted); font-size: 13px; margin: 0 0 20px;">Your application is in our system. You can track its status in your applications tab.</p>
+            <button class="button quiet full" type="button" onclick={closeModals}>Close window</button>
+          </div>
+        {:else}
+          <div class="apply-section">
+            <span class="eyebrow">APPLY FOR THIS POSITION</span>
+            <label for="cv-upload">CV / Resume</label>
+            <input id="cv-upload" name="resume" type="file" accept=".pdf,.doc,.docx" aria-describedby="cv-upload-help" onchange={handleResumeChange} required />
+            <small id="cv-upload-help" class="upload-help">{selectedResumeName ? `Selected: ${selectedResumeName}` : 'PDF, DOC or DOCX. Maximum file size: 10 MB.'}</small>
+            <label for="cover-letter">Cover letter</label>
+            <textarea id="cover-letter" name="coverLetter" maxlength="10000" placeholder="Tell Origins why this role is a good fit for you."></textarea>
+            <button class="button primary full" type="submit" disabled={busyAction}>
+              {#if busyAction}
+                <span class="loading-spinner" aria-hidden="true"></span> Submitting…
+              {:else}
+                Submit application
+              {/if}
+            </button>
+          </div>
+        {/if}
       </form>
     </section>
   </div>
@@ -559,7 +592,6 @@
 {/if}
 
 <style>
-  /* Base styles for the toggle button */
   .mobile-menu-toggle {
     display: none;
     background: transparent;
@@ -578,7 +610,6 @@
     display: none;
   }
 
-  /* Target exact breakpoint where app.css hides the sidebar (max-width: 850px) */
   @media (max-width: 850px) {
     .mobile-menu-toggle {
       display: inline-grid;
@@ -586,7 +617,6 @@
       margin-right: 12px;
     }
     
-    /* Override app.css `display: none` for sidebar when opened via toggle */
     .sidebar.mobile-open {
       display: flex !important;
       position: fixed;
